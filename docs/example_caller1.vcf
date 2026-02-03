@@ -1,0 +1,13 @@
+# Example VCF file for testing SNV merger
+# This represents output from a hypothetical variant caller
+
+##fileformat=VCFv4.2
+##source=ExampleCaller1
+##reference=hg38
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr1	1000	.	A	T	50.0	PASS	DP=100;AF=0.5
+chr1	2000	.	G	C	45.0	PASS	DP=80;AF=0.6
+chr2	3000	.	C	G	35.0	PASS	DP=90;AF=0.4
+chr2	4000	.	T	A	60.0	PASS	DP=120;AF=0.7
