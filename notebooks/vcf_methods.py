@@ -102,13 +102,6 @@ def modify_strelka_vcf (vcf_file_path:str, normal_sample:str, tumor_sample:str):
     })
     ### add GT to FORMAT header
     vcf.add_format_to_header({
-        "ID": "FILTER",
-        "Number": "1",
-        "Type": "String",
-        "Description": "FILTER state"
-    })
-    ### add GT to FORMAT header
-    vcf.add_format_to_header({
         "ID": "GT",
         "Number": "1",
         "Type": "String",
@@ -162,13 +155,24 @@ def modify_strelka_vcf (vcf_file_path:str, normal_sample:str, tumor_sample:str):
         record.set_format("GT", gt_array)
 
         ### calculate AD and AF
-        ad_left = [record.format(f"{record.REF}U").flatten()[0], record.format(f"{record.ALT[0]}U").flatten()[0]]
-        dp_left = np.sum(ad_left)
-        af_left = record.format(f"{record.ALT[0]}U").flatten()[0] / dp_left
+        ### check if SNV
+        if len(record.ALT[0]) == 1 and len(record.REF) == 1:
+            ad_left = [record.format(f"{record.REF}U").flatten()[0], record.format(f"{record.ALT[0]}U").flatten()[0]]
+            dp_left = np.sum(ad_left)
+            af_left = record.format(f"{record.ALT[0]}U").flatten()[0] / dp_left
 
-        ad_right = [record.format(f"{record.REF}U").flatten()[2], record.format(f"{record.ALT[0]}U").flatten()[2]]
-        dp_right = np.sum(ad_right)
-        af_right = record.format(f"{record.ALT[0]}U").flatten()[2] / dp_right
+            ad_right = [record.format(f"{record.REF}U").flatten()[2], record.format(f"{record.ALT[0]}U").flatten()[2]]
+            dp_right = np.sum(ad_right)
+            af_right = record.format(f"{record.ALT[0]}U").flatten()[2] / dp_right
+        else:
+            ad_left = [record.format("TAR").flatten()[0], record.format("TIR").flatten()[0]]
+            dp_left = np.sum(ad_left)
+            af_left = record.format("TIR").flatten()[0] / dp_left
+
+            ad_right = [record.format("TAR").flatten()[2], record.format("TIR").flatten()[2]]
+            dp_right = np.sum(ad_right)
+            af_right = record.format("TIR").flatten()[2] / dp_right
+
 
         ### set AF format
         af_array = np.array([[af_left], [af_right]])
