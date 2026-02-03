@@ -9,7 +9,7 @@ calls from multiple variant callers into a unified output.
 import argparse
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Dict, Set, Optional
 
@@ -23,14 +23,8 @@ class Variant:
     alt: str
     caller: str
     quality: float = 0.0
-    filters: Set[str] = None
-    info: Dict[str, str] = None
-    
-    def __post_init__(self):
-        if self.filters is None:
-            self.filters = set()
-        if self.info is None:
-            self.info = {}
+    filters: Set[str] = field(default_factory=set)
+    info: Dict[str, str] = field(default_factory=dict)
     
     def key(self):
         """Returns a unique key for this variant position"""
