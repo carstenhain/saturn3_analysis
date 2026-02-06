@@ -3,6 +3,141 @@ import numpy as np # type: ignore
 import os
 import pandas as pd # type: ignore
 import cyvcf2 # type: ignore
+import subprocess
+
+
+def harmonize_vcf (vcf_file_path:str, outdir:str, caller:str) -> str:
+    """
+    Harmonizes VCF files from Mutect2, MuSe and Strelka by adding the information from the FILTER field into the FORMAT field and adding the AD field.
+    This writes a new vcf file with the suffix ".harmonized.{caller}.vcf(.gz)"
+
+    Args:
+        vcf_file_path (str): Path to the VCF file
+        normal_sample (str): Name of the normal sample in the VCF
+        tumor_sample (str): Name of the tumor sample in the VCF
+        caller (str): Name of the caller, either "mutect2" or "strelka"
+
+    Raises:
+        ValueError: Raises Error if the input VCF file does not end with .vcf or .vcf.gz or if caller is not mutect2 or strelka
+    
+    Returns:
+        str: Path to the modified VCF file
+    """
+
+    ### get filename properties
+    basename = os.path.basename(vcf_file_path)
+    if basename.endswith(".vcf"):
+        ending = ".vcf"
+    elif basename.endswith(".vcf.gz"):
+        ending = ".vcf.gz"
+    else:
+        raise ValueError("Input VCF file must end with .vcf or .vcf.gz")
+    
+    ### subset to canonical chromosomes
+    canon_chrom_list = ",".join([f"chr{i}" for i in range(1,23)] + ["chrX", "chrY", "chrM"])
+
+    ### information for harmonization
+    vcf_header = "/home/hain/EMBL/Saturn3/data/misc/empty_vcf_header.txt"
+    tumor_sample_name = ""
+    normal_sample_name = ""
+    caller_code = ""
+
+    ### simple process for MuSe
+    if caller == "muse":
+        tumor_sample_name = "TUMOR"
+        normal_sample_name = "NORMAL"
+        caller_code = "MUSE"
+    ### get sample names from vcf header for mutect2 calls
+    elif caller == "mutect2":
+
+        ### get mutect2 sample names
+        mutect2_normal_name = subprocess.run(f"bcftools view -h {vcf_file_path} | grep '^##normal_sample='", shell=True, capture_output=True).stdout.decode("utf-8").strip()[16:]
+        mutect2_tumor_name = subprocess.run(f"bcftools view -h {vcf_file_path} | grep '^##tumor_sample='", shell=True, capture_output=True).stdout.decode("utf-8").strip()[15:]
+
+        tumor_sample_name = mutect2_tumor_name
+        normal_sample_name = mutect2_normal_name
+        caller_code = "M2"
+    ### prepare information for strelka calls, different process below
+    elif caller == "strelka":
+        tumor_sample_name = "TUMOR"
+        normal_sample_name = "NORMAL"
+        caller_code = "ST"
+
+    ### copy header into new file
+    os.system(f"cp {vcf_header} {os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}.unsorted.vcf")
+
+    ### write sample name ordering TUMOR first then NORMAL to file
+    with open(f"{vcf_file_path}.sample_ordering.txt", "w") as f:
+        f.write(f"{tumor_sample_name}\n{normal_sample_name}\n")
+
+    ### write column names
+    os.system(f"echo '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{caller_code}_TUMOR\t{caller_code}_NORMAL' >> {os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}.unsorted.vcf")
+
+    ### standard bcftools query based process for mutect2 and muse
+    if caller in ["mutect2", "muse"]:
+        ### append all passing variants to new vcf
+        os.system(f"bcftools query -r {canon_chrom_list} -S {vcf_file_path}.sample_ordering.txt -i 'FILTER=\"PASS\"' -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\t%QUAL\t.\t.\tAD:PASS[\t%AD:1]\n' {vcf_file_path} >> {os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}.unsorted.vcf")
+
+        ### append all failing variants to new vcf
+        os.system(f"bcftools query -r {canon_chrom_list} -S {vcf_file_path}.sample_ordering.txt -e 'FILTER=\"PASS\"' -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\t%QUAL\t.\t.\tAD:PASS[\t%AD:0]\n' {vcf_file_path} >> {os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}.unsorted.vcf")
+    ### different process for strelka, as strelka does not have an AD field and this mus be produces be the XU or TXR fields
+    elif caller == "strelka":
+        ### append vcf records to copied header
+        vcf_output_file = open(f"{os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}.unsorted.vcf", "a")
+
+        ### open vcf file and get indices of tumor and normal samples
+        vcf = cyvcf2.VCF(vcf_file_path)
+        tumor_idx = vcf.samples.index(tumor_sample_name)
+        normal_idx = vcf.samples.index(normal_sample_name)
+
+        ### work through records and write them to new vcf file
+        for record in vcf:
+
+            ### get filter value: 1 for PASS and 0 otherwise
+            if record.FILTER is None:
+                filter_value = 1
+            else:
+                filter_value = 0
+
+            ### get AD values for tumor and normal
+            ad_tumor = [0, 0]
+            ad_normal = [0, 0]
+            if record.var_type == "indel":
+                ad_tumor = [record.format("TAR")[tumor_idx][0], record.format("TIR")[tumor_idx][0]]
+                ad_normal = [record.format("TAR")[normal_idx][0], record.format("TIR")[normal_idx][0]]
+            elif record.var_type == "snp":
+                ad_tumor = [record.format(f"{record.REF}U")[tumor_idx][0], record.format(f"{record.ALT[0]}U")[tumor_idx][0]]
+                ad_normal = [record.format(f"{record.REF}U")[normal_idx][0], record.format(f"{record.ALT[0]}U")[normal_idx][0]]
+            else:
+                raise ValueError("Unsupported variant type in Strelka VCF")
+            
+            ### write record as vcf
+            vcf_output_file.write("\t".join([
+                record.CHROM,
+                str(record.POS),
+                ".",
+                record.REF,
+                record.ALT[0],
+                str(record.QUAL),
+                ".",
+                ".",
+                f"AD:PASS",
+                f"{ad_tumor[0]},{ad_tumor[1]}:{filter_value}",
+                f"{ad_normal[0]},{ad_normal[1]}:{filter_value}",
+            ]) + "\n")
+            
+        vcf_output_file.close()
+
+  
+    ### sort and compress vcf
+    os.system(f"bcftools sort --write-index {os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}.unsorted.vcf -Oz -o {os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}{ending}")
+
+    ### clean up
+    os.system(f"rm {os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}.unsorted.vcf")
+    os.system(f"rm {vcf_file_path}.sample_ordering.txt")
+
+    return f"{os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}{ending}"
+    
 
 
 def modify_mutect2_vcf (vcf_file_path:str, normal_sample:str, tumor_sample:str) -> str:
