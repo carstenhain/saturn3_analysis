@@ -6,7 +6,7 @@ import cyvcf2 # type: ignore
 import subprocess
 
 
-def harmonize_vcf (vcf_file_path:str, outdir:str, caller:str) -> str:
+def harmonize_vcf (vcf_file_path:str, outdir:str, caller:str, vcf_header:str) -> str:
     """
     Harmonizes VCF files from Mutect2, MuSe and Strelka by adding the information from the FILTER field into the FORMAT field and adding the AD field.
     This writes a new vcf file with the suffix ".harmonized.{caller}.vcf(.gz)"
@@ -16,6 +16,7 @@ def harmonize_vcf (vcf_file_path:str, outdir:str, caller:str) -> str:
         normal_sample (str): Name of the normal sample in the VCF
         tumor_sample (str): Name of the tumor sample in the VCF
         caller (str): Name of the caller, either "mutect2" or "strelka"
+        vcf_header (str): Path to the VCF header file
 
     Raises:
         ValueError: Raises Error if the input VCF file does not end with .vcf or .vcf.gz or if caller is not mutect2 or strelka
@@ -23,6 +24,10 @@ def harmonize_vcf (vcf_file_path:str, outdir:str, caller:str) -> str:
     Returns:
         str: Path to the modified VCF file
     """
+
+    ### index input vcf if neccessary
+    if not os.path.exists(f"{vcf_file_path}.csi"):
+        os.system(f"bcftools index {vcf_file_path}")
 
     ### get filename properties
     basename = os.path.basename(vcf_file_path)
@@ -37,7 +42,6 @@ def harmonize_vcf (vcf_file_path:str, outdir:str, caller:str) -> str:
     canon_chrom_list = ",".join([f"chr{i}" for i in range(1,23)] + ["chrX", "chrY", "chrM"])
 
     ### information for harmonization
-    vcf_header = "/home/hain/EMBL/Saturn3/data/misc/empty_vcf_header.txt"
     tumor_sample_name = ""
     normal_sample_name = ""
     caller_code = ""
@@ -139,6 +143,7 @@ def harmonize_vcf (vcf_file_path:str, outdir:str, caller:str) -> str:
     return f"{os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}{ending}"
     
 
+"""modifiy_X_vcf is probably not needed anymore"""
 
 def modify_mutect2_vcf (vcf_file_path:str, normal_sample:str, tumor_sample:str) -> str:
     """
