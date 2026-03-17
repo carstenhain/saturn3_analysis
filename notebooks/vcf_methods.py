@@ -4,6 +4,7 @@ import os
 import pandas as pd # type: ignore
 import cyvcf2 # type: ignore
 import subprocess
+import re
 
 
 def harmonize_vcf (vcf_file_path:str, outdir:str, caller:str, vcf_header:str) -> str:
@@ -142,6 +143,46 @@ def harmonize_vcf (vcf_file_path:str, outdir:str, caller:str, vcf_header:str) ->
 
     return f"{os.path.join(outdir, basename[:-len(ending)])}.harmonized.{caller}{ending}"
     
+
+
+
+
+
+
+
+def parse_bnd_alt(alt_string:str):
+    """
+    Parse BND ALT string to determine orientation and mate position.
+    
+    BND formats:
+    - t[p[    : piece extending to the right of p is joined after t
+    - t]p]    : reverse comp piece extending left of p is joined after t  
+    - ]p]t    : piece extending to the left of p is joined before t
+    - [p[t    : reverse comp piece extending right of p is joined before t
+    
+    Returns:
+        tuple: (mate_chr, mate_pos, orientation)
+    """
+    # Pattern for BND notation
+    patterns = [
+        (r't\[(.+):(\d+)\[', 'right_after'),      # t[p[
+        (r't\](.+):(\d+)\]', 'left_after'),       # t]p]
+        (r'\](.+):(\d+)\]t', 'left_before'),      # ]p]t
+        (r'\[(.+):(\d+)\[t', 'right_before')      # [p[t
+    ]
+    
+    for pattern, orientation in patterns:
+        match = re.search(pattern, alt_string.replace('N', 't'))
+        if match:
+            mate_chr = match.group(1)
+            mate_pos = int(match.group(2))
+            return mate_chr, mate_pos, orientation
+    
+    return None, None, None 
+
+
+
+
 
 """modifiy_X_vcf is probably not needed anymore"""
 

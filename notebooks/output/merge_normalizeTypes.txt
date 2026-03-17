@@ -1,0 +1,3 @@
+/home/hain/EMBL/Saturn3/analysis/saturn3_analysis/notebooks/output/manta.diploid_normalizeTypes.vcf
+/home/hain/EMBL/Saturn3/analysis/saturn3_analysis/notebooks/output/manta.somatic_normalizeTypes.vcf
+/home/hain/EMBL/Saturn3/analysis/saturn3_analysis/notebooks/output/tiddit_normalizeTypes.vcf
